@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<odoo>
+
+    <record id="crm_lead_view_form" model="ir.ui.view">
+        <field name="name">crm.lead.view.form.inherit.event.crm</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='categorization']" position="inside">
+                <field name="cmp_source" attrs="{'readonly': 1}"/>
+                <field name="cmp_medium" attrs="{'readonly': 1}"/>
+                <field name="cmp_name" attrs="{'readonly': 1}"/>
+                <field name="cmp_term" attrs="{'readonly': 1}"/>
+                <field name="cmp_content" attrs="{'readonly': 1}"/>
+                <field name="cmp_campaign" attrs="{'readonly': 1}"/>
+                <field name="gclid" attrs="{'readonly': 1}"/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>
