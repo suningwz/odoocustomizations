@@ -8,7 +8,10 @@
             <xpath expr="//notebook[last()]" position="inside">
                 <page string="Resmio" name="resmio">
                     <group name="container_row_2">
-                        <group string="CMP Info" name="cmp_info" priority="1">
+                        <group string="General" name="general" priority="1">
+                            <field name="facility_id"/>
+                        </group>
+                        <group string="CMP Info" name="cmp_info" priority="2">
                             <field name="cmp_source" attrs="{'readonly': 1}"/>
                             <field name="cmp_medium" attrs="{'readonly': 1}"/>
                             <field name="cmp_name" attrs="{'readonly': 1}"/>

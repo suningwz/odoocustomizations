@@ -5,6 +5,7 @@ from odoo import fields, models
 class ResPartner(models.Model):
     _inherit = 'res.partner'
 
+    facility_id = fields.Char('Facility ID')
     cmp_source = fields.Char('CMP Source')
     cmp_medium = fields.Char('CMP Medium')
     cmp_name = fields.Char('CMP Name')

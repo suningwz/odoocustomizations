@@ -9,7 +9,9 @@ All customizations for resmio GmbH
     'version' : '1.0',
     'category': 'Sales/CRM',
     'depends' : [
-        'sale'
+        'l10n_de',
+        'crm',
+        'sale',
     ],
     'data': [
         # 'security/ir.model.access.csv',
