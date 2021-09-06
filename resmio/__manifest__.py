@@ -23,3 +23,4 @@ All customizations for resmio GmbH
         'views/sale_report_templates.xml'
     ]
 }
+
