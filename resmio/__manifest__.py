@@ -17,6 +17,7 @@ All customizations for resmio GmbH
         'views/din5008_report.xml',
         'views/report_invoice.xml',
         'views/res_config_settings_view.xml',
+        'views/res_partner.xml',
         'views/sale_report_templates.xml'
     ]
 }
