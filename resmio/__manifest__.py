@@ -9,6 +9,7 @@ All customizations for resmio GmbH
     'version' : '1.0',
     'category': 'Sales/CRM',
     'depends' : [
+        'product',
         'l10n_de',
         'crm',
         'sale',
@@ -17,6 +18,7 @@ All customizations for resmio GmbH
         # 'security/ir.model.access.csv',
         'views/crm_lead.xml',
         'views/din5008_report.xml',
+        'views/product_template.xml',
         'views/report_invoice.xml',
         'views/res_config_settings_view.xml',
         'views/res_partner.xml',
