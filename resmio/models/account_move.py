@@ -60,7 +60,7 @@ class AccountMove(models.Model):
                         'name': line.name,
                         'amount_total': float("{:.2f}".format(line.price_total)),
                         'amount_untaxed': float("{:.2f}".format(line.price_subtotal)),
-                        'product_identifier': line.product_id.product_tmpl_id.product_identifier if line.product_id else None
+                        'product_identifier': line.product_id.product_tmpl_id.product_identifier if line.product_id and line.product_id.product_tmpl_id.product_identifier else None
                     })
 
                 self._api_update_invoice(
