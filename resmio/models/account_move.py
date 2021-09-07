@@ -1,4 +1,5 @@
 import requests
+import json
 from odoo import api, exceptions, fields, models, _
 from requests.auth import HTTPBasicAuth
 
@@ -19,7 +20,7 @@ class AccountMove(models.Model):
 
         return resmio_url, resmio_basic_auth_password
 
-    def _api_update_invoice(self, invoice_id, state, number, date, amount_untaxed, amount_total, payment_status):
+    def _api_update_invoice(self, invoice_id, state, number, move_type, date, amount_untaxed, amount_total, payment_status, commercial_partner_id, lines):
 
         resmio_url, resmio_basic_auth_password = self._api_creds()
 
@@ -30,31 +31,56 @@ class AccountMove(models.Model):
             'odoo_account_move_id': invoice_id,
             'state': state,
             'number': number,
+            'move_type': move_type,
             'date': date,
             'amount_untaxed': amount_untaxed,
             'amount_total': amount_total,
             'payment_status': payment_status,
+            'commercial_partner_id': commercial_partner_id,
+                'lines': lines,
         }
         path = '/odoo/invoice/'
-        r = requests.put(resmio_url + path, headers=headers, data=json.dumps(data), timeout=self.TIMEOUT, auth=HTTPBasicAuth('odoo', resmio_basic_auth_password))
+        r = requests.put(resmio_url + path, headers=headers, data=json.dumps(data), timeout=10.0, auth=HTTPBasicAuth('odoo', resmio_basic_auth_password))
         r.raise_for_status()
 
         return r.json()
 
+    def _create_or_update_invoice_at_resmio(self):
+        for invoice in self:
+            if invoice.state == 'draft':
+                continue
+            if invoice.move_type not in ['out_invoice', 'out_refund']:
+                continue
+            if not invoice.commercial_partner_id:
+                continue
+            try:
+                lines = []
+                for line in invoice.invoice_line_ids:
+                    lines.append({
+                        'name': line.name,
+                        'amount_total': float("{:.2f}".format(line.price_total)),
+                        'amount_untaxed': float("{:.2f}".format(line.price_subtotal)),
+                        'product_identifier': line.product_id.product_tmpl_id.product_identifier if line.product_id else None
+                    })
 
-
-    def _post(self, soft=True):
-        res = super(AccountMove, self)._post(soft=soft)
-        if not soft:
-            for invoice in self:
                 self._api_update_invoice(
                     invoice_id=invoice.id,
                     state=invoice.state,
                     number=invoice.name,
+                    move_type=invoice.move_type,
                     date=str(invoice.invoice_date),
                     amount_untaxed=float("{:.2f}".format(invoice.amount_untaxed)),
                     amount_total=float("{:.2f}".format(invoice.amount_total)),
                     payment_status=invoice.payment_state,
+                    commercial_partner_id=invoice.commercial_partner_id.id,
+                    lines=lines,
                 )
+            except exceptions.ValidationError:
+                continue
+
+    def write(self, vals):
+        res = super(AccountMove, self).write(vals)
+
+        self._create_or_update_invoice_at_resmio()
 
         return res
