@@ -20,7 +20,7 @@ class AccountMove(models.Model):
 
         return resmio_url, resmio_basic_auth_password
 
-    def _api_update_invoice(self, invoice_id, state, number, move_type, date, amount_untaxed, amount_total, payment_status, commercial_partner_id, lines):
+    def _api_update_invoice(self, invoice_id, state, number, move_type, date, amount_untaxed, amount_total, payment_state, commercial_partner_id, reversed_entry_id , lines):
 
         resmio_url, resmio_basic_auth_password = self._api_creds()
 
@@ -35,17 +35,18 @@ class AccountMove(models.Model):
             'date': date,
             'amount_untaxed': amount_untaxed,
             'amount_total': amount_total,
-            'payment_status': payment_status,
+            'payment_state': payment_state,
             'commercial_partner_id': commercial_partner_id,
-                'lines': lines,
+            'reversed_entry_id': reversed_entry_id,
+            'lines': lines,
         }
         path = '/odoo/invoice/'
-        r = requests.put(resmio_url + path, headers=headers, data=json.dumps(data), timeout=10.0, auth=HTTPBasicAuth('odoo', resmio_basic_auth_password))
+        r = requests.put(resmio_url + path, headers=headers, data=json.dumps(data), timeout=20.0, auth=HTTPBasicAuth('odoo', resmio_basic_auth_password))
         r.raise_for_status()
 
         return r.json()
 
-    def _create_or_update_invoice_at_resmio(self):
+    def _create_or_update_invoice_at_resmio(self, forced_state=None):
         for invoice in self:
             if invoice.state == 'draft':
                 continue
@@ -71,12 +72,18 @@ class AccountMove(models.Model):
                     date=str(invoice.invoice_date),
                     amount_untaxed=float("{:.2f}".format(invoice.amount_untaxed)),
                     amount_total=float("{:.2f}".format(invoice.amount_total)),
-                    payment_status=invoice.payment_state,
+                    payment_state=invoice.payment_state,
                     commercial_partner_id=invoice.commercial_partner_id.id,
+                    reversed_entry_id=invoice.reversed_entry_id.id if invoice.reversed_entry_id else None,
                     lines=lines,
                 )
             except exceptions.ValidationError:
                 continue
+
+    def action_invoice_paid(self):
+        res = super(AccountMove, self).action_invoice_paid()
+        self._create_or_update_invoice_at_resmio(forced_state='paid')
+        return res
 
     def write(self, vals):
         res = super(AccountMove, self).write(vals)
