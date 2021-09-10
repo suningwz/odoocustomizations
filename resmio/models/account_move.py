@@ -1,8 +1,13 @@
+from datetime import datetime
 import requests
 import json
+
 from odoo import api, exceptions, fields, models, _
 from requests.auth import HTTPBasicAuth
 
+import logging
+
+_logger = logging.getLogger(__name__)
 
 class AccountMove(models.Model):
     _inherit = "account.move"
@@ -79,6 +84,52 @@ class AccountMove(models.Model):
                 )
             except exceptions.ValidationError:
                 continue
+
+    def mark_invoice_paid_via_adyen(self, journal_id=None):
+
+        if self.state == 'draft':
+            return False
+        if self.payment_state == 'paid':
+            return False
+
+        if journal_id is None:
+            journal = self.env['account.journal'].search([('code', '=', 'ADYE1')])
+            if len(journal) != 1:
+                _logger.error("Error journal not found!")
+                return False
+            journal_id = journal.id
+
+
+        # Mark invoice as paid
+        pmt_wizard = self.env['account.payment.register'] \
+            .with_context(active_ids=[self.id], active_model='account.move', active_id=self.id) \
+            .create({
+            'amount': self.amount_total,
+            'communication': self.name,
+            'currency_id': self.currency_id.id,
+            'journal_id': journal_id,
+            'partner_id': self.partner_id.id,
+            'partner_type': 'customer',
+            'payment_date': datetime.now().date(),
+            'payment_difference_handling': 'open',
+            'payment_method_id': 1,
+            'payment_token_id': False,
+            'payment_type': 'inbound',
+            'writeoff_account_id': False,
+            'writeoff_label': "Write-Off",
+            'can_edit_wizard': True,
+            'can_group_payments': False,
+            'company_id': self.partner_id.company_id.id,
+            'country_code': False,
+            'group_payment': True,
+            'partner_bank_id': False,
+            'source_amount': self.amount_total,
+            'source_amount_currency': self.amount_total,
+            'source_currency_id': self.currency_id.id,
+        })
+        pmt_wizard._create_payments()
+        return True
+
 
     def action_invoice_paid(self):
         res = super(AccountMove, self).action_invoice_paid()
