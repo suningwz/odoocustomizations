@@ -9,7 +9,12 @@
                 <page string="Resmio" name="resmio">
                     <group name="container_row_2">
                         <group string="General" name="general" priority="1">
-                            <field name="facility_id"/>
+                            <field name="facility_id" attrs="{'readonly': 1}"/>
+                            <field name="enabled" attrs="{'readonly': 1}"/>
+                            <field name="verified" attrs="{'readonly': 1}"/>
+                            <field name="in_partner_network" attrs="{'readonly': 1}"/>
+                            <field name="bitburger_customer_number" attrs="{'readonly': 1}"/>
+                            <field name="valid_payment_information" attrs="{'readonly': 1}"/>
                         </group>
                         <group string="CMP Info" name="cmp_info" priority="2">
                             <field name="cmp_source" attrs="{'readonly': 1}"/>
