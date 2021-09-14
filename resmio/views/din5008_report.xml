@@ -84,5 +84,49 @@
     </xpath>
 </template>
 
+<template id="report_footer_company_details" inherit_id="l10n_de.external_layout_din5008">
+    <xpath expr="//div[hasclass('company_details')]" position="replace">
+        <div class="company_details">
+            <table>
+                <tr>
+                    <td>
+                        <ul class="list-inline">
+                            <li t-if="company.name"><span t-field="company.name"/></li>
+                            <li t-if="company.street"><span t-field="company.street"/></li>
+                            <li t-if="company.street2"><span t-field="company.street2"/></li>
+                            <li><span t-if="company.zip" t-field="company.zip"/> <span t-if="company.city" t-field="company.city"/></li>
+                            <li t-if="company.country_id"><span t-field="company.country_id.name"/></li>
+                        </ul>
+                    </td>
+                    <td>
+                        <ul class="list-inline">
+                            <li t-if="company.phone"><span t-field="company.phone"/></li>
+                            <li t-if="company.email"><span t-field="company.email"/></li>
+                            <li t-if="company.website"><span t-field="company.website"/></li>
+                        </ul>
+                    </td>
+                    <td>
+                        <ul class="list-inline">
+                            <li t-if="company.vat"><t t-esc="company.country_id.vat_label or 'Tax ID'"/>: <span t-field="company.vat"/></li>
+                            <li>HRB Nr: <span t-field="company.company_registry"/></li>
+                            <div t-field="company.report_footer"/>
+                        </ul>
+                    </td>
+                    <td>
+                        <ul class="list-inline" t-if="company.partner_id.bank_ids">
+                            <t t-foreach="company.partner_id.bank_ids[:1]" t-as="bank">
+                                <li><span t-field="bank.bank_id.name"/></li>
+                                <li>IBAN: <span t-field="bank.acc_number"/></li>
+                                <li>BIC: <span t-field="bank.bank_id.bic"/></li>
+                            </t>
+                        </ul>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+    </xpath>
+</template>
+
 </data>
 </openerp>
