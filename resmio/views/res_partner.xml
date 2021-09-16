@@ -6,7 +6,7 @@
         <field name="inherit_id" ref="base.view_partner_form"/>
         <field name="arch" type="xml">
             <xpath expr="//notebook[last()]" position="inside">
-                <page string="Resmio" name="resmio">
+                <page string="resmio" name="resmio">
                     <group name="container_row_2">
                         <group string="General" name="general" priority="1">
                             <field name="facility_id" attrs="{'readonly': 1}"/>
@@ -24,6 +24,12 @@
                             <field name="cmp_content" attrs="{'readonly': 1}"/>
                             <field name="cmp_campaign" attrs="{'readonly': 1}"/>
                             <field name="gclid" attrs="{'readonly': 1}"/>
+                        </group>
+                        <group string="Social Media" name="cmp_info" priority="3">
+                            <field name="facebookpage"/>
+                        </group>
+                        <group string="Other" name="cmp_info" priority="3">
+                            <field name="businesspartner"/>
                         </group>
                     </group>
                 </page>

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="res_config_settings_view_form" model="ir.ui.view">
+            <field name="name">res.config.settings.view.form.inherit.resmio.salesforcemigration</field>
+            <field name="model">res.config.settings</field>
+            <field name="priority" eval="100"/>
+            <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//div[hasclass('settings')]" position="inside">
+                    <div class="app_settings_block" data-string="resmio Salesforce migration" string="resmio Salesforce migration" data-key="resmio_salesforcemigration" groups="base.group_erp_manager">
+
+                        <h2>resmio Salesforce migration</h2>
+                        <div class="row mt16 o_settings_container" id="resmio_salesforcemigration_settings">
+                            <div class="col-xs-12 col-md-6 o_setting_box" id="resmio_salesforcemigration_postgres_host_setting">
+                                <div class="o_setting_right_pane">
+                                    <label for="resmio_salesforcemigration_postgres_host"/>
+                                    <div class="text-muted">
+                                        The host of your Postgres DB.
+                                    </div>
+                                    <div class="content-group">
+                                        <div class="mt16">
+                                            <field name="resmio_salesforcemigration_postgres_host" placeholder="ec2-1-2-3-4.eu-west-1.compute.amazonaws.com"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt16 o_settings_container" id="resmio_salesforcemigration_settings">
+                            <div class="col-xs-12 col-md-6 o_setting_box" id="resmio_salesforcemigration_postgres_database_setting">
+                                <div class="o_setting_right_pane">
+                                    <label for="resmio_salesforcemigration_postgres_database"/>
+                                    <div class="text-muted">
+                                        The database of your Postgres DB.
+                                    </div>
+                                    <div class="content-group">
+                                        <div class="mt16">
+                                            <field name="resmio_salesforcemigration_postgres_database" placeholder="db1234567"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt16 o_settings_container" id="resmio_salesforcemigration_settings">
+                            <div class="col-xs-12 col-md-6 o_setting_box" id="resmio_salesforcemigration_postgres_user_setting">
+                                <div class="o_setting_right_pane">
+                                    <label for="resmio_salesforcemigration_postgres_user"/>
+                                    <div class="text-muted">
+                                        The user of your Postgres DB.
+                                    </div>
+                                    <div class="content-group">
+                                        <div class="mt16">
+                                            <field name="resmio_salesforcemigration_postgres_user" placeholder="uasdfgfg4343"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt16 o_settings_container" id="resmio_salesforcemigration_settings">
+                            <div class="col-xs-12 col-md-6 o_setting_box" id="resmio_salesforcemigration_postgres_password_setting">
+                                <div class="o_setting_right_pane">
+                                    <label for="resmio_salesforcemigration_postgres_password"/>
+                                    <div class="text-muted">
+                                        The password of your Postgres DB.
+                                    </div>
+                                    <div class="content-group">
+                                        <div class="mt16">
+                                            <field name="resmio_salesforcemigration_postgres_password" placeholder="Abcd1234"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </xpath>
+            </field>
+        </record>
+
+    </data>
+</odoo>

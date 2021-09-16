@@ -1,5 +1,5 @@
 {
-    'name': "Resmio autocreate accounts",
+    'name': "resmio autocreate accounts",
     'description': """
     Automatically create payable and receivable accounts on first invoice
     """,

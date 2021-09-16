@@ -1,4 +1,3 @@
-# Part of Odoo. See LICENSE file for full copyright and licensing details
 from odoo import fields, models
 
 
@@ -19,3 +18,5 @@ class ResPartner(models.Model):
     cmp_content = fields.Char('CMP Content')
     cmp_campaign = fields.Char('CMP Campaign')
     gclid = fields.Char('GCLID')
+    facebookpage = fields.Char('Facebook Page')
+    businesspartner = fields.Char('Business Partner')
