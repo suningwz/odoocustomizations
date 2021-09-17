@@ -5,6 +5,7 @@
 
         <record id="salesforce_sync_cron" model="ir.cron">
             <field name="name">Salesforce Sync</field>
+            <field name="active" eval="False" />
             <field name="model_id" ref="base.model_res_partner"/>
             <field name="state">code</field>
             <field name="code">model._sync_from_salesforce()</field>

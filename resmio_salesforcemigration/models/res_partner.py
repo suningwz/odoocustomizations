@@ -109,6 +109,9 @@ class ResPartner(models.Model):
                 updates.append({
                     'id': mapped_facility_ids[acc['facility_id__c']],
                     'salesforce_account_id': acc['id'],
+                    'businesspartner': acc['gesch_ftspartner__c'],
+                    'create_uid': mapped_user_partner_ids[acc['createdby_email']] if acc['createdby_email'] in mapped_user_partner_ids else 1,
+                    'user_id': mapped_user_partner_ids[acc['owner_email']] if acc['owner_email'] in mapped_user_partner_ids else None,
                 })
             else:
                 inserts.append({
@@ -135,15 +138,12 @@ class ResPartner(models.Model):
                     'cmp_name': acc['cmp_name__c'],
                     'cmp_source': acc['cmp_source__c'],
                     'cmp_term': acc['cmp_term__c'],
-                    'owner_id': mapped_user_partner_ids[acc['owner_email']] if acc['owner_email'] in mapped_user_partner_ids else 1,
+                    'user_id': mapped_user_partner_ids[acc['owner_email']] if acc['owner_email'] in mapped_user_partner_ids else None,
 
                     # TODO add mslatestcontractreasonfortermination__c
                 })
                 if acc['type__c'] == 'Partner':
-                    new_tags.append({
-                        'salesforce_account_id': acc['id'],
-                        'type': acc['type__c'],
-                    })
+                    new_tags.append(acc['id'])
 
         insert_query = """INSERT INTO res_partner (
             salesforce_account_id,
@@ -183,7 +183,8 @@ class ResPartner(models.Model):
             supplier_rank,
             customer_rank,
             calendar_last_notif_ack,
-            sale_warn
+            sale_warn,
+            user_id
         )
         VALUES %s"""
 
@@ -192,9 +193,31 @@ class ResPartner(models.Model):
                  i['create_date'], i['facebookpage'], i['businesspartner'], i['create_uid'], i['cmp_campaign'],
                  i['cmp_content'], i['cmp_medium'], i['cmp_name'], i['cmp_source'], i['cmp_term'], True, 0, True,
                  i['name'], 1, datetime.datetime.now(), i['email_normalized'], 0, 'no-message', 0, 0,
-                 datetime.datetime.now(), 'no-message') for i in inserts]
+                 datetime.datetime.now(), 'no-message', i['user_id']) for i in inserts]
 
         execute_values(self.env.cr, insert_query, vals)
+
+        self.env.cr.execute("""
+            UPDATE res_partner
+            SET commercial_partner_id = id
+            WHERE commercial_partner_id IS NULL AND salesforce_account_id IS NOT NULL
+        """)
+
+        # Tags all partners with the proper categories
+        # Creates the category if it does not exist
+        if len(new_tags) > 1:
+            partner_categories = self.env['res.partner.category'].search([('name', '=', 'Partner')])
+            if len(partner_categories) < 1:
+                partner_categories = [self.env['res.partner.category'].create({'name': 'Partner'})]
+
+            new_tags_salesforce_account_id_strings = ",".join([f"'{t}'" for t in new_tags])
+            self.env.cr.execute(f"""INSERT INTO res_partner_res_partner_category_rel (category_id, partner_id) SELECT {partner_categories[0].id}, id FROM res_partner WHERE salesforce_account_id IN ({new_tags_salesforce_account_id_strings})""")
+
+            
+
+
+
+
 
     @api.model
     def _sync_from_salesforce(self):

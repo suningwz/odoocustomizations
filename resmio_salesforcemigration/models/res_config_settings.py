@@ -8,7 +8,7 @@ class ResConfigSettings(models.TransientModel):
     resmio_salesforcemigration_postgres_host = fields.Char('Postgres Host')
     resmio_salesforcemigration_postgres_database = fields.Char('Postgres Database')
     resmio_salesforcemigration_postgres_user = fields.Char('Postgres User')
-    resmio_salesforcemigration_postgres_password = fields.Char('Postgres User')
+    resmio_salesforcemigration_postgres_password = fields.Char('Postgres Password')
 
 
     @api.model
