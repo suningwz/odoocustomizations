@@ -5,8 +5,8 @@ class ResPartner(models.Model):
     _inherit = 'res.partner'
 
     facility_id = fields.Char('Facility ID')
-    salesforce_account_id = fields.Char('Salesforce Account ID')
-    salesforce_contact_id = fields.Char('Salesforce Contact ID')
+    salesforce_account_id = fields.Char('Salesforce Account ID', index=True)
+    salesforce_contact_id = fields.Char('Salesforce Contact ID', index=True)
     enabled = fields.Boolean('Enabled')
     verified = fields.Boolean('Verified')
     in_partner_network = fields.Boolean('In partner network')
