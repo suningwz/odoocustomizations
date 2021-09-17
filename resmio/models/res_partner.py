@@ -6,6 +6,7 @@ class ResPartner(models.Model):
 
     facility_id = fields.Char('Facility ID')
     salesforce_account_id = fields.Char('Salesforce Account ID')
+    salesforce_contact_id = fields.Char('Salesforce Contact ID')
     enabled = fields.Boolean('Enabled')
     verified = fields.Boolean('Verified')
     in_partner_network = fields.Boolean('In partner network')

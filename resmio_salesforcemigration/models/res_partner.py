@@ -44,13 +44,27 @@ class ResPartner(models.Model):
     def _get_partners_with_salesforce_account_ids(self):
         partners_with_salesforce_account_ids = self.env['res.partner'].search_read(
             [('salesforce_account_id', '!=', False)],
-            ['id', 'salesforce_account_id'],
+            ['id', 'salesforce_account_id', 'name'],
         )
         mapped_salesforce_account_ids = {}
         for p in partners_with_salesforce_account_ids:
-            mapped_salesforce_account_ids[p['salesforce_account_id']] = p['id']
+            mapped_salesforce_account_ids[p['salesforce_account_id']] = {
+                'id': p['id'],
+                'name': p['name'],
+            }
 
         return mapped_salesforce_account_ids
+
+    def _get_partners_with_salesforce_contact_ids(self):
+        partners_with_salesforce_contact_ids = self.env['res.partner'].search_read(
+            [('salesforce_contact_id', '!=', False)],
+            ['id', 'salesforce_contact_id'],
+        )
+        mapped_salesforce_contact_ids = {}
+        for p in partners_with_salesforce_contact_ids:
+            mapped_salesforce_contact_ids[p['salesforce_contact_id']] = p['id']
+
+        return mapped_salesforce_contact_ids
 
     def _get_country_ids_by_code(self):
         partners_with_country_ids = self.env['res.country'].search_read(
@@ -213,7 +227,138 @@ class ResPartner(models.Model):
             new_tags_salesforce_account_id_strings = ",".join([f"'{t}'" for t in new_tags])
             self.env.cr.execute(f"""INSERT INTO res_partner_res_partner_category_rel (category_id, partner_id) SELECT {partner_categories[0].id}, id FROM res_partner WHERE salesforce_account_id IN ({new_tags_salesforce_account_id_strings})""")
 
-            
+
+    def _sync_contacts_from_salesforce(self, cur, mapped_country_ids, mapped_user_partner_ids):
+        mapped_salesforce_account_ids = self._get_partners_with_salesforce_account_ids()
+        mapped_salesforce_contact_ids = self._get_partners_with_salesforce_contact_ids()
+
+        cur.execute("""SELECT c.id, c.accountid, billing_country__c, city__c, c.language__c, c.email, c.mobilephone, c.phone, salutation, c.firstname, c.lastname, c.createddate,
+           LOWER(owner.email) as owner_email, LOWER(createdby.email) as createdby_email
+        FROM contact c
+        LEFT JOIN user2 createdby on c.createdbyid = createdby.id
+        LEFT JOIN user2 owner on c.ownerid = owner.id
+        LIMIT 10""")
+
+        accounts = cur.fetchall()
+
+        # update
+        # create
+
+        updates = []
+        inserts = []
+
+        for acc in accounts:
+            if acc['id'] in mapped_salesforce_contact_ids:
+                # TODO check which fields we want to take over
+                # updates.append({
+                #     'id': mapped_salesforce_account_ids[acc['id']],
+                #     'salesforce_account_id': acc['id'],
+                # })
+                pass
+            if acc['accountid'] and acc['accountid'] not in mapped_salesforce_account_ids:
+                # We have a contact that belongs to an account that we don't know
+                pass
+            else:
+                name_components = []
+                if acc['firstname']:
+                    name_components.append(acc['firstname'])
+                if acc['lastname']:
+                    name_components.append(acc['lastname'])
+
+                if len(name_components) > 0:
+                    name = ' '.join(name_components)
+                else:
+                    name = acc['id']
+                commercial_company_name = name
+                display_name = name
+                user_id = None
+
+                parent_id = mapped_salesforce_account_ids[acc['accountid']]['id'] if acc['accountid'] and acc['accountid'] in mapped_salesforce_account_ids else None
+                if acc['accountid'] and acc['accountid'] in mapped_salesforce_account_ids:
+                    commercial_company_name = mapped_salesforce_account_ids[acc['accountid']]['name']
+                    display_name = commercial_company_name + ', ' + name
+                    user_id = mapped_user_partner_ids[acc['owner_email']] if acc['owner_email'] in mapped_user_partner_ids else None,
+
+                inserts.append({
+                    'salesforce_contact_id': acc['id'],
+                    'commercial_partner_id': parent_id,
+                    'parent_id': parent_id,
+                    'is_company': parent_id is None,
+                    'name': name,
+                    'commercial_company_name': commercial_company_name,
+                    'display_name': display_name,
+                    'lang': 'de_DE' if acc['language__c'] == 'de' else 'en_US',
+                    'city': acc['city__c'],
+                    'country_id': mapped_country_ids[acc['billing_country__c'].upper()] if acc['billing_country__c'] and acc['billing_country__c'].upper() in mapped_country_ids else None,
+                    'email': acc['email'],
+                    'email_normalized': tools.email_normalize(acc['email']) or acc['email'],
+                    'phone': acc['phone'],
+                    'mobile': acc['mobilephone'],
+                    'create_date': acc['createddate'],
+                    'create_uid': mapped_user_partner_ids[acc['createdby_email']] if acc['createdby_email'] in mapped_user_partner_ids else 1,
+                    'user_id': user_id,
+                })
+
+        insert_query = """INSERT INTO res_partner (
+            salesforce_contact_id,
+            name,
+            display_name,
+            commercial_partner_id,
+            lang,
+            vat,
+            website,
+            active,
+            type,
+            street,
+            zip,
+            city,
+            country_id,
+            bitburger_customer_number,
+            email,
+            phone,
+            mobile,
+            create_date,
+            facebookpage,
+            businesspartner,
+            create_uid,
+            cmp_campaign,
+            cmp_content,
+            cmp_medium,
+            cmp_name,
+            cmp_source,
+            cmp_term,
+            is_company,
+            color,
+            partner_share,
+            commercial_company_name,
+            write_uid,
+            write_date,
+            email_normalized,
+            message_bounce,
+            invoice_warn,
+            supplier_rank,
+            customer_rank,
+            calendar_last_notif_ack,
+            sale_warn,
+            user_id
+        )
+        VALUES %s"""
+
+        vals = [(i['salesforce_contact_id'], i['name'], i['name'], i['commercial_partner_id'], i['lang'], None, None, True, 'contact', None,
+                 None, i['city'], i['country_id'], None, i['email'], i['phone'], i['mobile'],
+                 i['create_date'], None, None, i['create_uid'], None,
+                 None, None, None, None, None, i['is_company'], 0, True,
+                 i['commercial_company_name'], 1, datetime.datetime.now(), i['email_normalized'], 0, 'no-message', 0, 0,
+                 datetime.datetime.now(), 'no-message', user_id) for i in inserts]
+
+        execute_values(self.env.cr, insert_query, vals)
+
+        self.env.cr.execute("""
+            UPDATE res_partner
+            SET commercial_partner_id = id
+            WHERE commercial_partner_id IS NULL AND salesforce_contact_id IS NOT NULL
+        """)
+
 
 
 
@@ -227,6 +372,8 @@ class ResPartner(models.Model):
         cur = self._create_db_cursor()
 
         self._sync_companies_from_salesforce(cur, mapped_country_ids, mapped_user_partner_ids)
+
+        self._sync_contacts_from_salesforce(cur, mapped_country_ids, mapped_user_partner_ids)
 
 
 
