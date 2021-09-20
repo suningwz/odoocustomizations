@@ -58,13 +58,27 @@ class ResPartner(models.Model):
     def _get_partners_with_salesforce_contact_ids(self):
         partners_with_salesforce_contact_ids = self.env['res.partner'].search_read(
             [('salesforce_contact_id', '!=', False)],
-            ['id', 'salesforce_contact_id'],
+            ['id', 'salesforce_contact_id', 'name'],
         )
         mapped_salesforce_contact_ids = {}
         for p in partners_with_salesforce_contact_ids:
-            mapped_salesforce_contact_ids[p['salesforce_contact_id']] = p['id']
+            mapped_salesforce_contact_ids[p['salesforce_contact_id']] = {
+                'id': p['id'],
+                'name': p['name'],
+            }
 
         return mapped_salesforce_contact_ids
+
+    def _get_leads_with_salesforce_lead_id(self):
+        leads_with_salesforce_lead_ids = self.env['crm.lead'].search_read(
+            [('salesforce_lead_id', '!=', False)],
+            ['id', 'salesforce_lead_id'],
+        )
+        mapped_salesforce_lead_ids = {}
+        for l in leads_with_salesforce_lead_ids:
+            mapped_salesforce_lead_ids[l['salesforce_lead_id']] = l['id']
+
+        return mapped_salesforce_lead_ids
 
     def _get_country_ids_by_code(self):
         partners_with_country_ids = self.env['res.country'].search_read(
@@ -228,8 +242,7 @@ class ResPartner(models.Model):
             self.env.cr.execute(f"""INSERT INTO res_partner_res_partner_category_rel (category_id, partner_id) SELECT {partner_categories[0].id}, id FROM res_partner WHERE salesforce_account_id IN ({new_tags_salesforce_account_id_strings})""")
 
 
-    def _sync_contacts_from_salesforce(self, cur, mapped_country_ids, mapped_user_partner_ids):
-        mapped_salesforce_account_ids = self._get_partners_with_salesforce_account_ids()
+    def _sync_contacts_from_salesforce(self, cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids):
         mapped_salesforce_contact_ids = self._get_partners_with_salesforce_contact_ids()
 
         cur.execute("""SELECT c.id, c.accountid, billing_country__c, city__c, c.language__c, c.email, c.mobilephone, c.phone, salutation, c.firstname, c.lastname, c.createddate,
@@ -255,7 +268,7 @@ class ResPartner(models.Model):
                 #     'salesforce_account_id': acc['id'],
                 # })
                 pass
-            if acc['accountid'] and acc['accountid'] not in mapped_salesforce_account_ids:
+            elif acc['accountid'] and acc['accountid'] not in mapped_salesforce_account_ids:
                 # We have a contact that belongs to an account that we don't know
                 pass
             else:
@@ -360,9 +373,181 @@ class ResPartner(models.Model):
         """)
 
 
+    def _sync_leads_and_opportunities(self, cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids, mapped_salesforce_contact_ids):
+
+        mapped_salesforce_lead_ids = self._get_leads_with_salesforce_lead_id()
+
+        cur.execute("""SELECT l.id, convertedaccountid, regexp_replace(replace(anschrift__c, '</p><p>', '\n'), E'<[^>]+>', '', 'gi') as description,
+               l.city, COALESCE(o.name, l.company) as name, company, convertedcontactid,
+               converteddate, convertedopportunityid, l.country,
+               country_code__c, COALESCE(LOWER(opportunity_owner.email), LOWER(lead_owner.email)) as owner_email,
+                COALESCE(LOWER(lead_createdby.email), LOWER(opportunity_createdby.email)) as createdby_email,
+               l.createddate, o.createddate as date_conversion, COALESCE(o.createddate, l.createddate) as date_open, dsgvo_gdpr__c, COALESCE(l.email, fb_email__c) as email_from,
+               l.mobilephone as mobilephone, COALESCE(l.phone, l.fb_phone__c) as phone, facebookseite__c, l.firstname, l.lastname, isconverted, l.isdeleted, l.kaltakquise__c, language__c,
+               COALESCE(o.lastactivitydate, l.lastactivitydate) as lastactivitydate, COALESCE(o.lastmodifiedbyid, l.lastmodifiedbyid) as lastmodifiedbyid,
+               COALESCE(o.lastmodifieddate, l.lastmodifieddate) as lastmodifieddate, COALESCE(o.lastreferenceddate, l.lastreferenceddate) as lastreferenceddate,
+               lasttransferdate, COALESCE(o.lastvieweddate, l.lastvieweddate) as lastvieweddate,
+               lead_assign_number__c, openinghours__c, photourl,l.postalcode, l.street, COALESCE(o.systemmodstamp, l.systemmodstamp) as systemmodstamp, l.title, website,
+               backend_subscription__c, cmp_campaign__c, cmp_content__c, cmp_medium__c, cmp_name__c, cmp_source__c, cmp_term__c, leadcap__facebook_lead_id__c,
+               type__c, closedate, isclosed, expectedrevenue,
+               CASE
+                   WHEN o.id is NULL THEN 'lead'
+                   ELSE 'opportunity'
+               END as type
+        FROM lead l
+        LEFT JOIN opportunity o on l.convertedopportunityid = o.id
+        LEFT JOIN user2 lead_createdby on l.createdbyid = lead_createdby.id
+        LEFT JOIN user2 lead_owner on l.ownerid = lead_owner.id
+        LEFT JOIN user2 opportunity_createdby on o.createdbyid = opportunity_createdby.id
+        LEFT JOIN user2 opportunity_owner on o.ownerid = opportunity_owner.id
+        LIMIT 10""")
 
 
+        leads = cur.fetchall()
 
+        # update
+        # create
+
+        updates = []
+        inserts = []
+        new_tags = []
+
+        recurring_plan_ids = self.env['crm.recurring.plan'].search([('number_of_months', '=', 1)])
+        if len(recurring_plan_ids) < 1:
+            recurring_plan_ids = [self.env['crm.recurring.plan'].create({'number_of_months': 1, 'name': 'Monthly'})]
+
+        for lead in leads:
+            if lead['id'] in mapped_salesforce_lead_ids:
+                # TODO check which fields we want to take over
+                # updates.append({
+                #     'id': mapped_salesforce_lead_ids[lead['id']],
+                #     'salesforce_account_id': lead['id'],
+                # })
+                pass
+            else:
+                name_components = []
+                if lead['firstname']:
+                    name_components.append(lead['firstname'])
+                if lead['lastname']:
+                    name_components.append(lead['lastname'])
+
+                contact_name = None
+                if len(name_components) > 0:
+                    contact_name = ' '.join(name_components)
+
+                partner_id = None
+                partner_name = None
+                if lead['convertedaccountid'] in mapped_salesforce_account_ids:
+                    partner_id = mapped_salesforce_account_ids[lead['convertedaccountid']]['id']
+                    partner_name = mapped_salesforce_account_ids[lead['convertedaccountid']]['name']
+                elif lead['convertedcontactid'] in mapped_salesforce_contact_ids:
+                    partner_id = mapped_salesforce_account_ids[lead['convertedcontactid']]
+                    partner_name = mapped_salesforce_account_ids[lead['convertedcontactid']]['name']
+
+                probability = 0.1
+                if lead['isclosed'] and lead['iswon']:
+                    probability = 100
+                elif lead['isclosed'] and not lead['iswon']:
+                    probability = 0
+
+                country_id = None
+                if lead['country_code__c'] and lead['country_code__c'].upper() in mapped_country_ids:
+                    country_id = mapped_country_ids[lead['country_code__c'].upper()]
+                elif lead['country'] and lead['country'].upper() in mapped_country_ids:
+                    country_id = mapped_country_ids[lead['country_code__c'].upper()]
+                elif lead['country'] and lead['country'].upper() in ['GERMANY', 'DEUTSCHLAND', 'ALEMÁN'] and 'DE' in mapped_country_ids:
+                    country_id = mapped_country_ids['DE']
+                elif lead['country'] and lead['country'].upper() in ['FRANCE', 'FRANKREICH'] and 'FR' in mapped_country_ids:
+                    country_id = mapped_country_ids['FR']
+                elif lead['country'] and lead['country'].upper() in ['SCHWEIZ', 'SWITZERLAND'] and 'CH' in mapped_country_ids:
+                    country_id = mapped_country_ids['CH']
+                elif lead['country'] and lead['country'].upper() in ['ÖSTERREICH', 'AUSTRIA'] and 'AT' in mapped_country_ids:
+                    country_id = mapped_country_ids['AT']
+
+                inserts.append({
+                    'salesforce_lead_id': lead['id'],
+                    'email_normalized': tools.email_normalize(lead['email_from']) or lead['email_from'],
+                    'name': lead['name'],
+                    'user_id': mapped_user_partner_ids[lead['owner_email']] if lead['owner_email'] in mapped_user_partner_ids else None,
+                    'description': lead['description'],
+                    'type': lead['type'],
+                    'stage_id': 1, # TODO implement logic based on flags
+                    'recurring_revenue_monthly': lead['expectedrevenue'],
+                    'recurring_revenue': lead['expectedrevenue'],
+                    'recurring_revenue_monthly_prorated': lead['expectedrevenue'] * probability / 100 if lead['expectedrevenue'] is not None else None,
+                    'date_closed': lead['closedate'] if lead['isclosed'] else None,
+                    'date_action_last': lead['lastactivitydate'],
+                    'day_close': abs((lead['closedate'] - lead['createddate']).days) if lead['isclosed'] else 0,
+                    'date_open': lead['date_open'],
+                    'day_open': abs((lead['date_open'] - lead['createddate']).days),
+                    'date_conversion': lead['date_conversion'],
+                    'date_deadline': lead['closedate'],
+                    'partner_id': partner_id,
+                    'partner_name': partner_name,
+                    'contact_name': contact_name,
+                    'email_from': lead['email_from'],
+                    'phone': lead['phone'],
+                    'mobile': lead['mobilephone'],
+                    'website': lead['website'],
+                    'street': lead['street'],
+                    'zip': lead['postalcode'],
+                    'city': lead['city'],
+                    'country_id': country_id,
+                    'probability': probability,
+                    'automated_probability': probability,
+                    'create_date': lead['createddate'],
+                    'create_uid': mapped_user_partner_ids[lead['createdby_email']] if lead['createdby_email'] in mapped_user_partner_ids else 1,
+                    'cmp_source': lead['cmp_source__c'],
+                    'cmp_medium': lead['cmp_medium__c'],
+                    'cmp_name': lead['cmp_name__c'],
+                    'cmp_term': lead['cmp_term__c'],
+                    'cmp_content': lead['cmp_content__c'],
+                    'cmp_campaign': lead['cmp_campaign__c'],
+                    'facebookpage': lead['facebookseite__c'],
+                    'date_last_stage_update': lead['systemmodstamp'],
+                })
+                if lead['type__c'] == 'Partner':
+                    new_tags.append(lead['id'])
+
+        insert_query = """INSERT INTO crm_lead (
+                        email_normalized, salesforce_lead_id, message_bounce,
+                        name, user_id, company_id, description,
+                        active, type, priority, team_id, stage_id, color, expected_revenue, prorated_revenue,
+                        recurring_revenue, recurring_plan, recurring_revenue_monthly,
+                        recurring_revenue_monthly_prorated, date_closed, date_action_last, date_open, day_open,
+                        day_close, date_last_stage_update, date_conversion, date_deadline, partner_id, contact_name,
+                        partner_name, function, title, email_from, phone, mobile, phone_state, email_state, website,
+                        lang_id, street, zip, city, country_id, probability, automated_probability,
+                        create_uid, create_date, write_uid, write_date,
+                        cmp_source, cmp_medium, cmp_name, cmp_term, cmp_content, cmp_campaign,
+                        facebookpage
+                        )
+        VALUES %s"""
+
+        vals = [(i['email_normalized'], i['salesforce_lead_id'], 0,
+                 i['name'], i['user_id'], 1, i['description'],
+                 True, i['type'], 0, 1, i['stage_id'], 0, 0, 0,
+                 i['recurring_revenue'], recurring_plan_ids[0].id, i['recurring_revenue_monthly'],
+                 i['recurring_revenue_monthly_prorated'], i['date_closed'], i['date_action_last'], i['date_open'], i['day_open'],
+                 i['day_close'], i['date_last_stage_update'], i['date_conversion'], i['date_deadline'], i['partner_id'], i['contact_name'],
+                 i['partner_name'], None, None, i['email_from'], i['phone'], i['mobile'], None, None,  i['website'],
+                 None, i['street'], i['zip'], i['city'], i['country_id'], i['probability'], i['automated_probability'],
+                 i['create_uid'], i['create_date'], 1, datetime.datetime.now(),
+                 i['cmp_source'], i['cmp_medium'], i['cmp_name'], i['cmp_term'], i['cmp_content'], i['cmp_campaign'], i['facebookpage']
+                 ) for i in inserts]
+
+        execute_values(self.env.cr, insert_query, vals)
+
+        # Tags all leads with the proper categories
+        # Creates the category if it does not exist
+        if len(new_tags) > 1:
+            lead_categories = self.env['crm.tag'].search([('name', '=', 'Partner')])
+            if len(lead_categories) < 1:
+                lead_categories = [self.env['crm.tag'].create({'name': 'Partner'})]
+
+            new_tags_salesforce_lead_id_strings = ",".join([f"'{t}'" for t in new_tags])
+            self.env.cr.execute(
+                f"""INSERT INTO crm_tag_rel (lead_id, tag_id) SELECT id, {lead_categories[0].id} FROM crm_lead WHERE salesforce_lead_id IN ({new_tags_salesforce_lead_id_strings})""")
 
     @api.model
     def _sync_from_salesforce(self):
@@ -373,7 +558,13 @@ class ResPartner(models.Model):
 
         self._sync_companies_from_salesforce(cur, mapped_country_ids, mapped_user_partner_ids)
 
-        self._sync_contacts_from_salesforce(cur, mapped_country_ids, mapped_user_partner_ids)
+        mapped_salesforce_account_ids = self._get_partners_with_salesforce_account_ids()
+
+        self._sync_contacts_from_salesforce(cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids)
+
+        mapped_salesforce_contact_ids = self._get_partners_with_salesforce_contact_ids()
+
+        self._sync_leads_and_opportunities(cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids, mapped_salesforce_contact_ids)
 
 
 
