@@ -389,7 +389,7 @@ class ResPartner(models.Model):
                lasttransferdate, COALESCE(o.lastvieweddate, l.lastvieweddate) as lastvieweddate,
                lead_assign_number__c, openinghours__c, photourl,l.postalcode, l.street, COALESCE(o.systemmodstamp, l.systemmodstamp) as systemmodstamp, l.title, website,
                backend_subscription__c, cmp_campaign__c, cmp_content__c, cmp_medium__c, cmp_name__c, cmp_source__c, cmp_term__c, leadcap__facebook_lead_id__c,
-               type__c, closedate, isclosed, expectedrevenue,
+               type__c, closedate, isclosed, amount, expectedrevenue,
                CASE
                    WHEN o.id is NULL THEN 'lead'
                    ELSE 'opportunity'
@@ -464,6 +464,12 @@ class ResPartner(models.Model):
                 elif lead['country'] and lead['country'].upper() in ['ÖSTERREICH', 'AUSTRIA'] and 'AT' in mapped_country_ids:
                     country_id = mapped_country_ids['AT']
 
+                recurring_revenue_monthly_prorated = None
+                if lead['expectedrevenue'] is not None:
+                    recurring_revenue_monthly_prorated = lead['expectedrevenue']
+                elif lead['amount'] is not None:
+                    recurring_revenue_monthly_prorated = lead['amount'] * probability / 100
+
                 inserts.append({
                     'salesforce_lead_id': lead['id'],
                     'email_normalized': tools.email_normalize(lead['email_from']) or lead['email_from'],
@@ -472,9 +478,9 @@ class ResPartner(models.Model):
                     'description': lead['description'],
                     'type': lead['type'],
                     'stage_id': 1, # TODO implement logic based on flags
-                    'recurring_revenue_monthly': lead['expectedrevenue'],
-                    'recurring_revenue': lead['expectedrevenue'],
-                    'recurring_revenue_monthly_prorated': lead['expectedrevenue'] * probability / 100 if lead['expectedrevenue'] is not None else None,
+                    'recurring_revenue_monthly': lead['amount'],
+                    'recurring_revenue': lead['amount'],
+                    'recurring_revenue_monthly_prorated': recurring_revenue_monthly_prorated,
                     'date_closed': lead['closedate'] if lead['isclosed'] else None,
                     'date_action_last': lead['lastactivitydate'],
                     'day_close': abs((lead['closedate'] - lead['createddate']).days) if lead['isclosed'] else 0,
