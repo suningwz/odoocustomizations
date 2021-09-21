@@ -1,0 +1,4 @@
+[submodule "submodule-crm"]
+	path = submodule-crm
+	url = https://github.com/OCA/crm
+	branch = 14.0
