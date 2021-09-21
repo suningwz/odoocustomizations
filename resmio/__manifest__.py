@@ -14,6 +14,7 @@ All customizations for resmio GmbH
         'crm',
         'sale',
         'crm_phonecall',
+        'helpdesk',
     ],
     'data': [
         # 'security/ir.model.access.csv',

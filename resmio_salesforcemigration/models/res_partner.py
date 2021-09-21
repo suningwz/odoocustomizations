@@ -1,5 +1,6 @@
 from odoo import api, fields, models, _, tools
 import psycopg2
+import uuid
 from psycopg2.extras import execute_values
 import datetime
 
@@ -82,6 +83,17 @@ class ResPartner(models.Model):
 
     def _get_phone_calls_with_salesforce_task_id(self):
         leads_with_salesforce_task_ids = self.env['crm.phonecall'].search_read(
+            [('salesforce_task_id', '!=', False)],
+            ['id', 'salesforce_task_id'],
+        )
+        mapped_salesforce_task_ids = {}
+        for l in leads_with_salesforce_task_ids:
+            mapped_salesforce_task_ids[l['salesforce_task_id']] = l['id']
+
+        return mapped_salesforce_task_ids
+
+    def _get_helpdesk_tickets_with_salesforce_task_id(self):
+        leads_with_salesforce_task_ids = self.env['helpdesk.ticket'].search_read(
             [('salesforce_task_id', '!=', False)],
             ['id', 'salesforce_task_id'],
         )
@@ -522,6 +534,7 @@ class ResPartner(models.Model):
                     'cmp_campaign': lead['cmp_campaign__c'],
                     'facebookpage': lead['facebookseite__c'],
                     'date_last_stage_update': lead['systemmodstamp'],
+                    'write_date': lead['lastmodifieddate'],
                 })
                 if lead['type__c'] == 'Partner':
                     new_tags.append(lead['id'])
@@ -549,7 +562,7 @@ class ResPartner(models.Model):
                  i['day_close'], i['date_last_stage_update'], i['date_conversion'], i['date_deadline'], i['partner_id'], i['contact_name'],
                  i['partner_name'], None, None, i['email_from'], i['phone'], i['mobile'], None, None,  i['website'],
                  None, i['street'], i['zip'], i['city'], i['country_id'], i['probability'], i['automated_probability'],
-                 i['create_uid'], i['create_date'], 1, datetime.datetime.now(),
+                 i['create_uid'], i['create_date'], 1, i['write_date'],
                  i['cmp_source'], i['cmp_medium'], i['cmp_name'], i['cmp_term'], i['cmp_content'], i['cmp_campaign'], i['facebookpage']
                  ) for i in inserts]
 
@@ -567,7 +580,7 @@ class ResPartner(models.Model):
                 f"""INSERT INTO crm_tag_rel (lead_id, tag_id) SELECT id, {lead_categories[0].id} FROM crm_lead WHERE salesforce_lead_id IN ({new_tags_salesforce_lead_id_strings})""")
 
 
-    def _sync_phonecalls(self, cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids, mapped_salesforce_contact_ids):
+    def _sync_phonecalls(self, cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids):
 
         mapped_salesforce_task_ids = self._get_phone_calls_with_salesforce_task_id()
 
@@ -635,6 +648,79 @@ class ResPartner(models.Model):
 
         execute_values(self.env.cr, insert_query, vals)
 
+
+    def _sync_tasks(self, cur, mapped_user_partner_ids, mapped_salesforce_account_ids):
+
+        mapped_salesforce_task_ids = self._get_helpdesk_tickets_with_salesforce_task_id()
+
+        cur.execute("""SELECT t.id, t.accountid, activitydate, date_completed__c, LOWER(createdby.email) as createdby_email, t.createddate,
+               t.description, entscheider_erreicht__c, isarchived, isclosed, t.isdeleted, ishighpriority, isreminderset, t.lastmodifiedbyid,
+               t.lastmodifieddate, nicht_erreicht__c, LOWER(owner.email) as owner_email, priority, reminderdatetime, status, subtype__c, subject, summary__c, t.systemmodstamp,
+               tasksubtype, t.type
+               from task t
+        LEFT JOIN user2 createdby on t.createdbyid = createdby.id
+        LEFT JOIN user2 owner on t.ownerid = owner.id
+        WHERE type != 'Call'
+        LIMIT 10""") # TODO remove limit
+
+        tasks = cur.fetchall()
+
+        # update
+        # create
+
+        updates = []
+        inserts = []
+
+        for task in tasks:
+            if task['id'] in mapped_salesforce_task_ids:
+                # TODO check which fields we want to take over
+                # updates.append({
+                #     'id': mapped_salesforce_account_ids[task['id']],
+                #     'salesforce_account_id': task['id'],
+                # })
+                pass
+            else:
+
+                partner_id = None
+                partner_name = None
+                if task['accountid'] and task['accountid'] in mapped_salesforce_account_ids:
+                    partner_id = mapped_salesforce_account_ids[task['accountid']]['id']
+                    partner_name = mapped_salesforce_account_ids[task['accountid']]['name']
+
+                inserts.append({
+                    'salesforce_task_id': task['id'],
+                    'name': task['subject'],
+                    'description': task['description'],
+                    'active': not task['isarchived'] and not task['isdeleted'],
+                    'user_id': mapped_user_partner_ids[task['owner_email']] if task['owner_email'] in mapped_user_partner_ids else None,
+                    'partner_id': partner_id,
+                    'partner_name': partner_name,
+                    'partner_email': None, # TODO check where to get the email from without parsing the content
+                    'stage_id': 1,  # TODO implement logic based on flags
+                    'date_last_stage_update': task['lastmodifieddate'],
+                    'assign_date': task['createddate'],
+                    'access_token': str(uuid.uuid4()),
+                    'create_uid': mapped_user_partner_ids[task['createdby_email']] if task['createdby_email'] in mapped_user_partner_ids else 1,
+                    'create_date': task['createddate'],
+                    'write_date': task['lastmodifieddate'],
+                })
+
+        insert_query = """INSERT INTO helpdesk_ticket (name, description, active, kanban_state,
+                               user_id, partner_id, partner_name, partner_email, priority, stage_id,
+                               date_last_stage_update, assign_date, assign_hours, close_hours,
+                               sla_reached_late, rating_last_value, access_token, create_uid, create_date,
+                               write_uid, write_date, salesforce_task_id)
+
+        VALUES %s"""
+
+        vals = [(i['name'], i['description'], i['active'], 'normal',
+                 i['user_id'], i['partner_id'], i['partner_name'], i['partner_email'], 0, i['stage_id'],
+                 i['date_last_stage_update'], i['assign_date'], 0, 0,
+                 False, 0, i['access_token'], i['create_uid'], i['create_date'],
+                 1, i['write_date'], i['salesforce_task_id']) for i in inserts]
+
+        execute_values(self.env.cr, insert_query, vals)
+
     @api.model
     def _sync_from_salesforce(self):
         mapped_country_ids = self._get_country_ids_by_code()
@@ -651,7 +737,8 @@ class ResPartner(models.Model):
         mapped_salesforce_contact_ids = self._get_partners_with_salesforce_contact_ids()
 
         self._sync_leads_and_opportunities(cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids, mapped_salesforce_contact_ids)
-        self._sync_phonecalls(cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids, mapped_salesforce_contact_ids)
+        self._sync_phonecalls(cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids)
+        self._sync_tasks(cur, mapped_user_partner_ids, mapped_salesforce_account_ids)
 
 
 
