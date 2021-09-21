@@ -80,6 +80,17 @@ class ResPartner(models.Model):
 
         return mapped_salesforce_lead_ids
 
+    def _get_phone_calls_with_salesforce_task_id(self):
+        leads_with_salesforce_task_ids = self.env['crm.phonecall'].search_read(
+            [('salesforce_task_id', '!=', False)],
+            ['id', 'salesforce_task_id'],
+        )
+        mapped_salesforce_task_ids = {}
+        for l in leads_with_salesforce_task_ids:
+            mapped_salesforce_task_ids[l['salesforce_task_id']] = l['id']
+
+        return mapped_salesforce_task_ids
+
     def _get_country_ids_by_code(self):
         partners_with_country_ids = self.env['res.country'].search_read(
             [],
@@ -113,7 +124,7 @@ class ResPartner(models.Model):
         FROM account a
         LEFT JOIN user2 c on a.createdbyid = c.id
         LEFT JOIN user2 o on a.ownerid = o.id
-        LIMIT 10""")
+        LIMIT 10""") # TODO remove limit
 
         accounts = cur.fetchall()
 
@@ -250,7 +261,7 @@ class ResPartner(models.Model):
         FROM contact c
         LEFT JOIN user2 createdby on c.createdbyid = createdby.id
         LEFT JOIN user2 owner on c.ownerid = owner.id
-        LIMIT 10""")
+        LIMIT 10""") # TODO remove limit
 
         accounts = cur.fetchall()
 
@@ -400,7 +411,7 @@ class ResPartner(models.Model):
         LEFT JOIN user2 lead_owner on l.ownerid = lead_owner.id
         LEFT JOIN user2 opportunity_createdby on o.createdbyid = opportunity_createdby.id
         LEFT JOIN user2 opportunity_owner on o.ownerid = opportunity_owner.id
-        LIMIT 10""")
+        LIMIT 10""") # TODO remove limit
 
 
         leads = cur.fetchall()
@@ -555,6 +566,75 @@ class ResPartner(models.Model):
             self.env.cr.execute(
                 f"""INSERT INTO crm_tag_rel (lead_id, tag_id) SELECT id, {lead_categories[0].id} FROM crm_lead WHERE salesforce_lead_id IN ({new_tags_salesforce_lead_id_strings})""")
 
+
+    def _sync_phonecalls(self, cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids, mapped_salesforce_contact_ids):
+
+        mapped_salesforce_task_ids = self._get_phone_calls_with_salesforce_task_id()
+
+        cur.execute("""SELECT t.id, t.accountid, activitydate, calldisposition, calldurationinseconds, calltype,date_completed__c, LOWER(createdby.email) as createdby_email, t.createddate,
+               t.description, entscheider_erreicht__c, isarchived, isclosed, t.lastmodifiedbyid,
+               t.lastmodifieddate, nicht_erreicht__c, LOWER(owner.email) as owner_email, priority, reminderdatetime, status, subtype__c, subject, summary__c, t.systemmodstamp,
+               tasksubtype, t.type, aircall__answered_by__c, aircall__call_recording__c, aircall__detailed_type__c, aircall__has_connected__c, aircall__hour_of_the_day__c,
+               aircall__is_missed_call__c, aircall__is_voicemail__c, aircall__timezone__c, aircall__phone_number__c
+               from task t
+        LEFT JOIN user2 createdby on t.createdbyid = createdby.id
+        LEFT JOIN user2 owner on t.ownerid = owner.id
+        WHERE type = 'Call'
+        LIMIT 10""") # TODO remove limit
+
+        calls = cur.fetchall()
+
+        # update
+        # create
+
+        updates = []
+        inserts = []
+
+        for call in calls:
+            if call['id'] in mapped_salesforce_task_ids:
+                # TODO check which fields we want to take over
+                # updates.append({
+                #     'id': mapped_salesforce_account_ids[call['id']],
+                #     'salesforce_account_id': call['id'],
+                # })
+                pass
+            else:
+
+                if call['isclosed'] and call['aircall__detailed_type__c'] in ('Outbound unanswered', 'Missed call', ):
+                    state = 'cancel'
+                elif call['isclosed']:
+                    state = 'done'
+                else:
+                    state = 'open'
+
+                inserts.append({
+                    'salesforce_task_id': call['id'],
+                    'create_date': call['createddate'],
+                    'create_uid': mapped_user_partner_ids[call['createdby_email']] if call['createdby_email'] in mapped_user_partner_ids else 1,
+                    'user_id': mapped_user_partner_ids[call['owner_email']] if call['owner_email'] in mapped_user_partner_ids else None,
+                    'partner_id': mapped_salesforce_account_ids[call['accountid']]['id'] if call['accountid'] and call['accountid'] in mapped_salesforce_account_ids else None,
+                    'description': call['description'],
+                    'state': state,
+                    'name': call['subject'],
+                    'active': not call['isarchived'],
+                    'duration': call['calldurationinseconds'] / 60.0 if call['calldurationinseconds'] is not None else 0,
+                    'partner_phone': call['aircall__phone_number__c'],
+                    'date': call['createddate'],
+                    'direction': 'out' if call['calltype'] == 'Outbound' else 'in'
+                })
+
+        insert_query = """INSERT INTO crm_phonecall (create_date, user_id, partner_id, description,
+                             state, name, active, duration, partner_phone,
+                             priority, date, direction, create_uid, write_uid, write_date)
+
+        VALUES %s"""
+
+        vals = [(i['create_date'], i['user_id'], i['partner_id'], i['description'],
+                 i['state'], i['name'], i['active'], i['duration'], i['partner_phone'],
+                 0, i['date'], i['direction'], i['create_uid'], 1, datetime.datetime.now()) for i in inserts]
+
+        execute_values(self.env.cr, insert_query, vals)
+
     @api.model
     def _sync_from_salesforce(self):
         mapped_country_ids = self._get_country_ids_by_code()
@@ -571,6 +651,7 @@ class ResPartner(models.Model):
         mapped_salesforce_contact_ids = self._get_partners_with_salesforce_contact_ids()
 
         self._sync_leads_and_opportunities(cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids, mapped_salesforce_contact_ids)
+        self._sync_phonecalls(cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids, mapped_salesforce_contact_ids)
 
 
 
