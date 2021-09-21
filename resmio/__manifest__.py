@@ -4,7 +4,7 @@
     'description':"""
 All customizations for resmio GmbH
 =======================================
-- Adds custom tempaltes
+- Adds custom tempaltes, fields and other logic
     """,
     'version' : '1.0',
     'category': 'Sales/CRM',
@@ -13,6 +13,7 @@ All customizations for resmio GmbH
         'l10n_de',
         'crm',
         'sale',
+        'crm_phonecall',
     ],
     'data': [
         # 'security/ir.model.access.csv',
