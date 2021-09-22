@@ -123,6 +123,10 @@ class ResPartner(models.Model):
         for p in partners_with_partner_ids:
             mapped_partner_ids[p['login'].lower()] = p['partner_id'][0]
 
+        # Maps denniver@resmio.com to denniver.schuch@resmio.com
+        if 'denniver.schuch@resmio.com' in partners_with_partner_ids:
+            mapped_partner_ids['denniver@resmio.com'] = partners_with_partner_ids['denniver.schuch@resmio.com']
+
         return mapped_partner_ids
 
     def _sync_companies_from_salesforce(self, cur, mapped_country_ids, mapped_user_partner_ids):
@@ -135,8 +139,7 @@ class ResPartner(models.Model):
                cmp_campaign__c,cmp_content__c, cmp_medium__c,  cmp_name__c, cmp_source__c,    cmp_term__c, mslatestcontractreasonfortermination__c, type__c, verified_admin__c
         FROM account a
         LEFT JOIN user2 c on a.createdbyid = c.id
-        LEFT JOIN user2 o on a.ownerid = o.id
-        LIMIT 10""") # TODO remove limit
+        LEFT JOIN user2 o on a.ownerid = o.id""")
 
         accounts = cur.fetchall()
 
@@ -272,8 +275,7 @@ class ResPartner(models.Model):
            LOWER(owner.email) as owner_email, LOWER(createdby.email) as createdby_email
         FROM contact c
         LEFT JOIN user2 createdby on c.createdbyid = createdby.id
-        LEFT JOIN user2 owner on c.ownerid = owner.id
-        LIMIT 10""") # TODO remove limit
+        LEFT JOIN user2 owner on c.ownerid = owner.id""")
 
         accounts = cur.fetchall()
 
@@ -412,7 +414,7 @@ class ResPartner(models.Model):
                lasttransferdate, COALESCE(o.lastvieweddate, l.lastvieweddate) as lastvieweddate,
                lead_assign_number__c, openinghours__c, photourl,l.postalcode, l.street, COALESCE(o.systemmodstamp, l.systemmodstamp) as systemmodstamp, l.title, website,
                backend_subscription__c, cmp_campaign__c, cmp_content__c, cmp_medium__c, cmp_name__c, cmp_source__c, cmp_term__c, leadcap__facebook_lead_id__c,
-               type__c, closedate, isclosed, amount, expectedrevenue,
+               type__c, closedate, isclosed, iswon, amount, expectedrevenue,
                CASE
                    WHEN o.id is NULL THEN 'lead'
                    ELSE 'opportunity'
@@ -422,8 +424,7 @@ class ResPartner(models.Model):
         LEFT JOIN user2 lead_createdby on l.createdbyid = lead_createdby.id
         LEFT JOIN user2 lead_owner on l.ownerid = lead_owner.id
         LEFT JOIN user2 opportunity_createdby on o.createdbyid = opportunity_createdby.id
-        LEFT JOIN user2 opportunity_owner on o.ownerid = opportunity_owner.id
-        LIMIT 10""") # TODO remove limit
+        LEFT JOIN user2 opportunity_owner on o.ownerid = opportunity_owner.id""")
 
 
         leads = cur.fetchall()
@@ -474,17 +475,17 @@ class ResPartner(models.Model):
                     probability = 0
 
                 country_id = None
-                if lead['country_code__c'] and lead['country_code__c'].upper() in mapped_country_ids:
+                if lead['country_code__c'] is not None and lead['country_code__c'].upper() in mapped_country_ids:
                     country_id = mapped_country_ids[lead['country_code__c'].upper()]
-                elif lead['country'] and lead['country'].upper() in mapped_country_ids:
-                    country_id = mapped_country_ids[lead['country_code__c'].upper()]
-                elif lead['country'] and lead['country'].upper() in ['GERMANY', 'DEUTSCHLAND', 'ALEMÁN'] and 'DE' in mapped_country_ids:
+                elif lead['country'] is not None and lead['country'].upper() in mapped_country_ids:
+                    country_id = mapped_country_ids[lead['country'].upper()]
+                elif lead['country'] is not None and lead['country'].upper() in ['GERMANY', 'DEUTSCHLAND', 'ALEMÁN'] and 'DE' in mapped_country_ids:
                     country_id = mapped_country_ids['DE']
-                elif lead['country'] and lead['country'].upper() in ['FRANCE', 'FRANKREICH'] and 'FR' in mapped_country_ids:
+                elif lead['country'] is not None and lead['country'].upper() in ['FRANCE', 'FRANKREICH'] and 'FR' in mapped_country_ids:
                     country_id = mapped_country_ids['FR']
-                elif lead['country'] and lead['country'].upper() in ['SCHWEIZ', 'SWITZERLAND'] and 'CH' in mapped_country_ids:
+                elif lead['country'] is not None and lead['country'].upper() in ['SCHWEIZ', 'SWITZERLAND'] and 'CH' in mapped_country_ids:
                     country_id = mapped_country_ids['CH']
-                elif lead['country'] and lead['country'].upper() in ['ÖSTERREICH', 'AUSTRIA'] and 'AT' in mapped_country_ids:
+                elif lead['country'] is not None and lead['country'].upper() in ['ÖSTERREICH', 'AUSTRIA'] and 'AT' in mapped_country_ids:
                     country_id = mapped_country_ids['AT']
 
                 recurring_revenue_monthly_prorated = None
@@ -506,7 +507,7 @@ class ResPartner(models.Model):
                     'recurring_revenue_monthly_prorated': recurring_revenue_monthly_prorated,
                     'date_closed': lead['closedate'] if lead['isclosed'] else None,
                     'date_action_last': lead['lastactivitydate'],
-                    'day_close': abs((lead['closedate'] - lead['createddate']).days) if lead['isclosed'] else 0,
+                    'day_close': abs((lead['closedate'] - lead['createddate'].date()).days) if lead['isclosed'] else 0,
                     'date_open': lead['date_open'],
                     'day_open': abs((lead['date_open'] - lead['createddate']).days),
                     'date_conversion': lead['date_conversion'],
@@ -536,6 +537,7 @@ class ResPartner(models.Model):
                     'date_last_stage_update': lead['systemmodstamp'],
                     'write_date': lead['lastmodifieddate'],
                 })
+
                 if lead['type__c'] == 'Partner':
                     new_tags.append(lead['id'])
 
@@ -592,8 +594,7 @@ class ResPartner(models.Model):
                from task t
         LEFT JOIN user2 createdby on t.createdbyid = createdby.id
         LEFT JOIN user2 owner on t.ownerid = owner.id
-        WHERE type = 'Call'
-        LIMIT 10""") # TODO remove limit
+        WHERE type = 'Call'""")
 
         calls = cur.fetchall()
 
@@ -660,8 +661,7 @@ class ResPartner(models.Model):
                from task t
         LEFT JOIN user2 createdby on t.createdbyid = createdby.id
         LEFT JOIN user2 owner on t.ownerid = owner.id
-        WHERE type != 'Call'
-        LIMIT 10""") # TODO remove limit
+        WHERE type != 'Call'""")
 
         tasks = cur.fetchall()
 
@@ -689,7 +689,7 @@ class ResPartner(models.Model):
 
                 inserts.append({
                     'salesforce_task_id': task['id'],
-                    'name': task['subject'],
+                    'name': task['subject'] or task['id'],
                     'description': task['description'],
                     'active': not task['isarchived'] and not task['isdeleted'],
                     'user_id': mapped_user_partner_ids[task['owner_email']] if task['owner_email'] in mapped_user_partner_ids else None,
