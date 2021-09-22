@@ -3,17 +3,70 @@
     <data noupdate="1">
 
 
-        <record id="salesforce_sync_cron" model="ir.cron">
-            <field name="name">Salesforce Sync</field>
+        <record id="salesforce_sync_cron1" model="ir.cron">
+            <field name="name">Salesforce 1 sync companies</field>
             <field name="active" eval="False" />
             <field name="model_id" ref="base.model_res_partner"/>
             <field name="state">code</field>
-            <field name="code">model._sync_from_salesforce()</field>
+            <field name="code">model._sync_companies_from_salesforce()</field>
             <field name="user_id" ref="base.user_root"/>
             <field name="interval_number">12</field>
             <field name="interval_type">months</field>
             <field name="numbercall">1</field>
             <field name="doall" eval="False"/>
         </record>
+
+        <record id="salesforce_sync_cron2" model="ir.cron">
+            <field name="name">Salesforce 2 sync contacts</field>
+            <field name="active" eval="False" />
+            <field name="model_id" ref="base.model_res_partner"/>
+            <field name="state">code</field>
+            <field name="code">model._sync_contacts_from_salesforce()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">12</field>
+            <field name="interval_type">months</field>
+            <field name="numbercall">1</field>
+            <field name="doall" eval="False"/>
+        </record>
+
+        <record id="salesforce_sync_cron3" model="ir.cron">
+            <field name="name">Salesforce 3 sync leads and opportunities</field>
+            <field name="active" eval="False" />
+            <field name="model_id" ref="base.model_res_partner"/>
+            <field name="state">code</field>
+            <field name="code">model._sync_leads_and_opportunities()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">12</field>
+            <field name="interval_type">months</field>
+            <field name="numbercall">1</field>
+            <field name="doall" eval="False"/>
+        </record>
+
+        <record id="salesforce_sync_cron4" model="ir.cron">
+            <field name="name">Salesforce 4 sync phonecalls</field>
+            <field name="active" eval="False" />
+            <field name="model_id" ref="base.model_res_partner"/>
+            <field name="state">code</field>
+            <field name="code">model._sync_phonecalls()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">12</field>
+            <field name="interval_type">months</field>
+            <field name="numbercall">1</field>
+            <field name="doall" eval="False"/>
+        </record>
+
+        <record id="salesforce_sync_cron5" model="ir.cron">
+            <field name="name">Salesforce 5 sync tasks</field>
+            <field name="active" eval="False" />
+            <field name="model_id" ref="base.model_res_partner"/>
+            <field name="state">code</field>
+            <field name="code">model._sync_tasks()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">12</field>
+            <field name="interval_type">months</field>
+            <field name="numbercall">1</field>
+            <field name="doall" eval="False"/>
+        </record>
+
     </data>
 </odoo>

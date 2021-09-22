@@ -129,7 +129,13 @@ class ResPartner(models.Model):
 
         return mapped_partner_ids
 
-    def _sync_companies_from_salesforce(self, cur, mapped_country_ids, mapped_user_partner_ids):
+    @api.model
+    def _sync_companies_from_salesforce(self):
+        mapped_country_ids = self._get_country_ids_by_code()
+        mapped_user_partner_ids = self._get_user_partner_ids_by_email()
+
+        cur = self._create_db_cursor()
+
         mapped_facility_ids = self._get_facility_id_partner_mapping()
         mapped_salesforce_account_ids = self._get_partners_with_salesforce_account_ids()
 
@@ -268,7 +274,13 @@ class ResPartner(models.Model):
             self.env.cr.execute(f"""INSERT INTO res_partner_res_partner_category_rel (category_id, partner_id) SELECT {partner_categories[0].id}, id FROM res_partner WHERE salesforce_account_id IN ({new_tags_salesforce_account_id_strings})""")
 
 
-    def _sync_contacts_from_salesforce(self, cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids):
+    @api.model
+    def _sync_contacts_from_salesforce(self):
+        mapped_country_ids = self._get_country_ids_by_code()
+        mapped_user_partner_ids = self._get_user_partner_ids_by_email()
+
+        cur = self._create_db_cursor()
+        mapped_salesforce_account_ids = self._get_partners_with_salesforce_account_ids()
         mapped_salesforce_contact_ids = self._get_partners_with_salesforce_contact_ids()
 
         cur.execute("""SELECT c.id, c.accountid, billing_country__c, city__c, c.language__c, c.email, c.mobilephone, c.phone, salutation, c.firstname, c.lastname, c.createddate,
@@ -398,7 +410,15 @@ class ResPartner(models.Model):
         """)
 
 
-    def _sync_leads_and_opportunities(self, cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids, mapped_salesforce_contact_ids):
+    @api.model
+    def _sync_leads_and_opportunities(self):
+
+        mapped_country_ids = self._get_country_ids_by_code()
+        mapped_user_partner_ids = self._get_user_partner_ids_by_email()
+
+        cur = self._create_db_cursor()
+        mapped_salesforce_account_ids = self._get_partners_with_salesforce_account_ids()
+        mapped_salesforce_contact_ids = self._get_partners_with_salesforce_contact_ids()
 
         mapped_salesforce_lead_ids = self._get_leads_with_salesforce_lead_id()
 
@@ -582,8 +602,13 @@ class ResPartner(models.Model):
                 f"""INSERT INTO crm_tag_rel (lead_id, tag_id) SELECT id, {lead_categories[0].id} FROM crm_lead WHERE salesforce_lead_id IN ({new_tags_salesforce_lead_id_strings})""")
 
 
-    def _sync_phonecalls(self, cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids):
+    @api.model
+    def _sync_phonecalls(self):
 
+        mapped_user_partner_ids = self._get_user_partner_ids_by_email()
+
+        cur = self._create_db_cursor()
+        mapped_salesforce_account_ids = self._get_partners_with_salesforce_account_ids()
         mapped_salesforce_task_ids = self._get_phone_calls_with_salesforce_task_id()
 
         cur.execute("""SELECT t.id, t.accountid, activitydate, calldisposition, calldurationinseconds, calltype,date_completed__c, LOWER(createdby.email) as createdby_email, t.createddate,
@@ -650,8 +675,13 @@ class ResPartner(models.Model):
         execute_values(self.env.cr, insert_query, vals)
 
 
-    def _sync_tasks(self, cur, mapped_user_partner_ids, mapped_salesforce_account_ids):
+    @api.model
+    def _sync_tasks(self):
 
+        mapped_user_partner_ids = self._get_user_partner_ids_by_email()
+
+        cur = self._create_db_cursor()
+        mapped_salesforce_account_ids = self._get_partners_with_salesforce_account_ids()
         mapped_salesforce_task_ids = self._get_helpdesk_tickets_with_salesforce_task_id()
 
         cur.execute("""SELECT t.id, t.accountid, activitydate, date_completed__c, LOWER(createdby.email) as createdby_email, t.createddate,
@@ -661,7 +691,7 @@ class ResPartner(models.Model):
                from task t
         LEFT JOIN user2 createdby on t.createdbyid = createdby.id
         LEFT JOIN user2 owner on t.ownerid = owner.id
-        WHERE type != 'Call'""")
+        WHERE type != 'Call' OR type IS NULL""")
 
         tasks = cur.fetchall()
 
@@ -670,6 +700,7 @@ class ResPartner(models.Model):
 
         updates = []
         inserts = []
+        activities = []
 
         for task in tasks:
             if task['id'] in mapped_salesforce_task_ids:
@@ -687,12 +718,19 @@ class ResPartner(models.Model):
                     partner_id = mapped_salesforce_account_ids[task['accountid']]['id']
                     partner_name = mapped_salesforce_account_ids[task['accountid']]['name']
 
-                inserts.append({
+                # user_id may not be null, so lets create a fallback to create_uid
+                create_uid = mapped_user_partner_ids[task['createdby_email']] if task['createdby_email'] in mapped_user_partner_ids else 1
+                if task['owner_email'] in mapped_user_partner_ids:
+                    user_id = mapped_user_partner_ids[task['owner_email']]
+                else:
+                    user_id = create_uid
+
+                new_task = {
                     'salesforce_task_id': task['id'],
                     'name': task['subject'] or task['id'],
                     'description': task['description'],
                     'active': not task['isarchived'] and not task['isdeleted'],
-                    'user_id': mapped_user_partner_ids[task['owner_email']] if task['owner_email'] in mapped_user_partner_ids else None,
+                    'user_id': user_id,
                     'partner_id': partner_id,
                     'partner_name': partner_name,
                     'partner_email': None, # TODO check where to get the email from without parsing the content
@@ -700,10 +738,16 @@ class ResPartner(models.Model):
                     'date_last_stage_update': task['lastmodifieddate'],
                     'assign_date': task['createddate'],
                     'access_token': str(uuid.uuid4()),
-                    'create_uid': mapped_user_partner_ids[task['createdby_email']] if task['createdby_email'] in mapped_user_partner_ids else 1,
+                    'create_uid': create_uid,
                     'create_date': task['createddate'],
                     'write_date': task['lastmodifieddate'],
-                })
+                    'reminderdatetime': task['reminderdatetime'],
+                }
+                inserts.append(new_task)
+                if task['reminderdatetime'] is not None and task['reminderdatetime'] > datetime.datetime.now():
+                    activities.append(new_task)
+
+
 
         insert_query = """INSERT INTO helpdesk_ticket (name, description, active, kanban_state,
                                user_id, partner_id, partner_name, partner_email, priority, stage_id,
@@ -721,24 +765,37 @@ class ResPartner(models.Model):
 
         execute_values(self.env.cr, insert_query, vals)
 
-    @api.model
+        if len(activities) > 0:
+            helpdesk_ticket_model_id = self.env['ir.model'].search([('model', '=', 'helpdesk.ticket')], limit=1).id
+            mail_activity_type_id = self.env['mail.activity.type'].search([('name', '=', 'To Do')], limit=1).id
+
+            for activity in activities:
+                ticket = self.env['helpdesk.ticket'].search([('salesforce_task_id', '=', activity['salesforce_task_id'])])
+                self.env['mail.activity'].create({
+                    'activity_type_id': mail_activity_type_id,
+                    'date_deadline': activity['reminderdatetime'].date(),
+                    'recommended_activity_type_id': False,
+                    'res_id': ticket.id,
+                    'res_model_id': helpdesk_ticket_model_id,
+                    'summary': ticket.name,
+                    'user_id': activity['user_id'],
+                })
+
+                # self.env['calendar.event'].create({
+                #     'name': ticket.name,
+                #     'activity_ids': [(6, False, activity_id.ids)],
+                #     'start': '2018-11-12 21:00:00',
+                #     'stop': '2018-11-13 00:00:00',
+                # })
+
     def _sync_from_salesforce(self):
-        mapped_country_ids = self._get_country_ids_by_code()
-        mapped_user_partner_ids = self._get_user_partner_ids_by_email()
 
-        cur = self._create_db_cursor()
+        self._sync_companies_from_salesforce()
+        self._sync_contacts_from_salesforce()
 
-        self._sync_companies_from_salesforce(cur, mapped_country_ids, mapped_user_partner_ids)
-
-        mapped_salesforce_account_ids = self._get_partners_with_salesforce_account_ids()
-
-        self._sync_contacts_from_salesforce(cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids)
-
-        mapped_salesforce_contact_ids = self._get_partners_with_salesforce_contact_ids()
-
-        self._sync_leads_and_opportunities(cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids, mapped_salesforce_contact_ids)
-        self._sync_phonecalls(cur, mapped_country_ids, mapped_user_partner_ids, mapped_salesforce_account_ids)
-        self._sync_tasks(cur, mapped_user_partner_ids, mapped_salesforce_account_ids)
+        self._sync_leads_and_opportunities()
+        self._sync_phonecalls()
+        self._sync_tasks()
 
 
 
